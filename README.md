@@ -23,6 +23,8 @@ Backbone PLM --[webhook]--> Webhook Service --[transformed quote]--> Bamboo Rose
 - **Spring Boot Actuator** health checks
 - **Scheduled retry processor** for failed events
 - **REST management API** for event monitoring
+- **OpenAPI/Swagger UI** for interactive API documentation
+- **Dead letter queue** with retry and discard operations
 
 ## Tech Stack
 
@@ -99,7 +101,18 @@ docker run -p 8080:8080 \
 | GET | `/api/internal/events/quote/{quoteId}` | Get events by quote ID |
 | GET | `/api/internal/events/recent` | Recent 10 events |
 | GET | `/api/internal/stats` | Event statistics |
+| GET | `/api/internal/dlt` | List dead letter queue events |
+| POST | `/api/internal/dlt/{eventId}/retry` | Retry a specific failed event |
+| POST | `/api/internal/dlt/retry-all` | Retry all failed events |
+| DELETE | `/api/internal/dlt/{eventId}` | Discard a failed event |
 | POST | `/api/internal/health/external` | Check external API health |
+
+### OpenAPI / Swagger
+
+Interactive API documentation is available at:
+
+- **Swagger UI**: `http://localhost:8080/api/swagger-ui/index.html`
+- **OpenAPI JSON**: `http://localhost:8080/api/v3/api-docs`
 
 ### Health & Metrics
 
@@ -167,6 +180,12 @@ signature = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdiges
 
 ### Environment Variables
 
+Copy `.env.example` to `.env` and configure your values:
+
+```bash
+cp .env.example .env
+```
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `WEBHOOK_SECRET` | HMAC signing secret | `change-this-in-production` |
@@ -200,6 +219,7 @@ spring:
 - **Circuit breaker**: Opens after 50% failure rate over 10 calls
 - **Timeout**: 10s per Bamboo Rose API call
 - **Scheduled processor**: Runs every 60s to pick up retriable events
+- **Dead letter queue**: Permanently failed events are moved to DLT for manual review via `/api/internal/dlt`
 
 ## Monitoring
 
@@ -234,7 +254,7 @@ Access H2 console at: `http://localhost:8080/api/h2-console`
 
 ```
 src/main/java/com/backbonebamboorose/
-├── config/          # Async, Security, RestTemplate, Properties
+├── config/          # Async, Security, OpenAPI, RestTemplate, Properties
 ├── controller/      # Webhook & Management endpoints
 ├── dto/             # Request/Response DTOs
 ├── exception/       # Custom exceptions & global handler
@@ -242,7 +262,7 @@ src/main/java/com/backbonebamboorose/
 │   ├── backbone/    # Backbone PLM quote model
 │   └── bamboorose/  # Bamboo Rose quote model
 ├── repository/      # Spring Data JPA repositories
-├── service/         # Business logic services
+├── service/         # Business logic services (incl. DeadLetterQueueService)
 └── transformer/     # Quote data transformation
 ```
 

@@ -8,9 +8,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableAsync
 @EnableScheduling
-public class BackboneToBbrApplication {
+public class BackboneBambooRoseIntegrationApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(BackboneToBbrApplication.class, args);
+        SpringApplication.run(BackboneBambooRoseIntegrationApplication.class, args);
     }
 }
