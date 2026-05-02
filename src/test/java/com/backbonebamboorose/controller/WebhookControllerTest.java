@@ -1,13 +1,11 @@
 package com.backbonebamboorose.controller;
 
-import com.backbonebamboorose.config.WebhookProperties;
 import com.backbonebamboorose.dto.WebhookResponse;
 import com.backbonebamboorose.model.WebhookEvent;
 import com.backbonebamboorose.service.QuoteSyncService;
 import com.backbonebamboorose.service.WebhookReceiverService;
-import com.backbonebamboorose.service.WebhookSignatureValidator;
+import com.backbonebamboorose.service.WebhookAuthValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -15,10 +13,6 @@ import org.springframework.boot.test.mock.bean.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -44,86 +38,50 @@ class WebhookControllerTest {
     private QuoteSyncService quoteSyncService;
 
     @MockBean
-    private WebhookSignatureValidator webhookSignatureValidator;
-
-    @MockBean
-    private WebhookProperties webhookProperties;
-
-    @MockBean
-    private WebhookProperties.Security securityProperties;
-
-    private static final String TEST_SECRET = "test-secret";
-
-    @BeforeEach
-    void setUp() {
-        when(webhookProperties.getSecurity()).thenReturn(securityProperties);
-        when(securityProperties.getSecret()).thenReturn(TEST_SECRET);
-    }
+    private WebhookAuthValidator webhookAuthValidator;
 
     @Test
-    void handleBackboneQuoteWebhook_shouldReturnAccepted() throws Exception {
-        String payload = "{\"id\":\"Q-001\",\"quote_number\":\"QT-2024-001\",\"status\":\"CREATED\"}";
-        String signature = computeSignature(payload);
+    void handleBkbnWebhook_shouldReturnOk() throws Exception {
+        String payload = """
+                {
+                    "event": "VISUALS_READY",
+                    "orderId": "ORD-12345",
+                    "assignmentId": "ASM-001",
+                    "visualType": "POST",
+                    "product": "GROUND_PHOTO",
+                    "timestamp": "2024-01-15T10:30:00Z"
+                }
+                """;
 
         WebhookEvent mockEvent = WebhookEvent.builder()
                 .eventId("event-123")
-                .quoteId("Q-001")
+                .orderId("ORD-12345")
+                .assignmentId("ASM-001")
                 .status(WebhookEvent.EventStatus.PENDING)
                 .build();
 
         when(webhookReceiverService.receiveWebhook(any(), any(), any())).thenReturn(mockEvent);
         when(quoteSyncService.processWebhookEvent(any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        mockMvc.perform(post("/webhook/backbone/quotes")
-                        .header("X-Webhook-Signature", signature)
-                        .header("X-Webhook-Event-Type", "QUOTE_CREATED")
+        mockMvc.perform(post("/webhook/bkbn/visuals")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Event-Type", "VISUALS_READY")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
-                .andExpect(status().isAccepted())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.event_id").value("event-123"))
-                .andExpect(jsonPath("$.quote_id").value("Q-001"));
+                .andExpect(jsonPath("$.order_id").value("ORD-12345"));
     }
 
     @Test
-    void handleBackboneQuoteWebhook_shouldReturnBadRequestOnSignatureFailure() throws Exception {
-        String payload = "{\"id\":\"Q-001\"}";
+    void handleBkbnWebhook_shouldReturnBadRequestOnAuthFailure() throws Exception {
+        String payload = "{\"event\": \"VISUALS_READY\", \"orderId\": \"ORD-12345\", \"assignmentId\": \"ASM-001\"}";
 
-        mockMvc.perform(post("/webhook/backbone/quotes")
-                        .header("X-Webhook-Signature", "invalid-signature")
+        mockMvc.perform(post("/webhook/bkbn/visuals")
+                        .header("Authorization", "Bearer invalid-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void handleQuoteSyncRequest_shouldReturnAccepted() throws Exception {
-        String payload = "{\"id\":\"Q-001\",\"quote_number\":\"QT-2024-001\"}";
-        String signature = computeSignature(payload);
-
-        WebhookEvent mockEvent = WebhookEvent.builder()
-                .eventId("event-456")
-                .quoteId("Q-001")
-                .status(WebhookEvent.EventStatus.PENDING)
-                .build();
-
-        when(webhookReceiverService.receiveWebhook(any(), any(), any())).thenReturn(mockEvent);
-        when(quoteSyncService.processWebhookEvent(any())).thenReturn(CompletableFuture.completedFuture(null));
-
-        mockMvc.perform(post("/webhook/backbone/quotes/sync")
-                        .header("X-Webhook-Signature", signature)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.success").value(true));
-    }
-
-    private String computeSignature(String payload) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKey = new SecretKeySpec(
-                TEST_SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        mac.init(secretKey);
-        byte[] hash = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
-        return HexFormat.of().formatHex(hash);
     }
 }

@@ -10,24 +10,25 @@ import org.springframework.context.annotation.Configuration;
 public class WebhookProperties {
 
     private Security security = new Security();
-    private Backbone backbone = new Backbone();
+    private Bkbn bkbn = new Bkbn();
     private Bamboorose bamboorose = new Bamboorose();
 
     @Data
     public static class Security {
-        private String secret;
-        private String headerName = "X-Webhook-Signature";
+        private String webhookSecret;
     }
 
     @Data
-    public static class Backbone {
-        private String baseUrl;
-        private String apiKey;
+    public static class Bkbn {
+        private String baseUrl = "https://sync.bkbn.com";
+        private String clientId;
+        private String clientSecret;
+        private String jwtToken;
     }
 
     @Data
     public static class Bamboorose {
-        private String baseUrl;
+        private String baseUrl = "https://api.bamboorose.com";
         private String apiKey;
         private String apiSecret;
     }

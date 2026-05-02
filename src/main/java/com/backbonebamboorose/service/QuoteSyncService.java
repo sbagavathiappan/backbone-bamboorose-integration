@@ -1,8 +1,8 @@
 package com.backbonebamboorose.service;
 
-import com.backbonebamboorose.exception.WebhookProcessingException;
 import com.backbonebamboorose.model.WebhookEvent;
-import com.backbonebamboorose.model.backbone.BackboneQuote;
+import com.backbonebamboorose.model.bkbn.BkbnMaterialsResponse;
+import com.backbonebamboorose.model.bkbn.BkbnWebhookEvent;
 import com.backbonebamboorose.model.bamboorose.BambooRoseQuote;
 import com.backbonebamboorose.repository.WebhookEventRepository;
 import com.backbonebamboorose.transformer.QuoteTransformer;
@@ -27,8 +27,9 @@ import java.util.concurrent.CompletableFuture;
 public class QuoteSyncService {
 
     private final WebhookEventRepository webhookEventRepository;
-    private final QuoteTransformer quoteTransformer;
+    private final BkbnClientService bkbnClientService;
     private final BambooRoseClientService bambooRoseClientService;
+    private final QuoteTransformer quoteTransformer;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
 
@@ -39,32 +40,57 @@ public class QuoteSyncService {
 
     @Async("webhookTaskExecutor")
     public CompletableFuture<Void> processWebhookEvent(WebhookEvent event) {
-        log.info("Processing webhook event: eventId={}, type={}", event.getEventId(), event.getEventType());
+        log.info("Processing webhook event: eventId={}, type={}, orderId={}",
+                event.getEventId(), event.getEventType(), event.getOrderId());
 
         Timer.Sample sample = Timer.start(meterRegistry);
-        Counter.builder(SYNC_COUNTER).tag("event_type", event.getEventType().name()).register(meterRegistry).increment();
+        Counter.builder(SYNC_COUNTER)
+                .tag("event_type", event.getEventType())
+                .register(meterRegistry).increment();
 
         try {
             updateEventStatus(event, WebhookEvent.EventStatus.PROCESSING);
 
-            BackboneQuote backboneQuote = objectMapper.readValue(event.getPayload(), BackboneQuote.class);
-            BambooRoseQuote bambooRoseQuote = quoteTransformer.transform(backboneQuote);
+            BkbnWebhookEvent bkbnEvent = objectMapper.readValue(event.getPayload(), BkbnWebhookEvent.class);
 
-            BambooRoseQuote result;
-            if (isUpdateEvent(event.getEventType())) {
-                result = bambooRoseClientService.updateQuote(event.getQuoteId(), bambooRoseQuote);
+            if (!Boolean.TRUE.equals(event.getMaterialsFetched())) {
+                BkbnMaterialsResponse materials = bkbnClientService.getMaterials(
+                        bkbnEvent.getOrderId(),
+                        bkbnEvent.getAssignmentId(),
+                        bkbnEvent.getProduct(),
+                        bkbnEvent.getVisualType()
+                );
+
+                event.setMaterialsFetched(true);
+                webhookEventRepository.save(event);
+                log.info("Materials fetched for order={}: {} materials",
+                        bkbnEvent.getOrderId(),
+                        materials.getMaterials() != null ? materials.getMaterials().size() : 0);
+
+                BambooRoseQuote bambooRoseQuote = quoteTransformer.transform(bkbnEvent, materials);
+
+                bambooRoseClientService.syncQuote(bambooRoseQuote);
             } else {
-                result = bambooRoseClientService.syncQuote(bambooRoseQuote);
+                log.info("Materials already fetched, reprocessing event: eventId={}", event.getEventId());
+                BkbnWebhookEvent existingEvent = objectMapper.readValue(event.getPayload(), BkbnWebhookEvent.class);
+                BkbnMaterialsResponse materials = bkbnClientService.getMaterials(
+                        existingEvent.getOrderId(),
+                        existingEvent.getAssignmentId(),
+                        existingEvent.getProduct(),
+                        existingEvent.getVisualType()
+                );
+                BambooRoseQuote bambooRoseQuote = quoteTransformer.transform(existingEvent, materials);
+                bambooRoseClientService.syncQuote(bambooRoseQuote);
             }
 
             updateEventStatus(event, WebhookEvent.EventStatus.COMPLETED);
             sample.stop(Timer.builder(SYNC_TIMER)
-                    .tag("event_type", event.getEventType().name())
+                    .tag("event_type", event.getEventType())
                     .tag("status", "success")
                     .register(meterRegistry));
 
             Counter.builder(SUCCESS_COUNTER)
-                    .tag("event_type", event.getEventType().name())
+                    .tag("event_type", event.getEventType())
                     .register(meterRegistry).increment();
 
             log.info("Webhook event processed successfully: eventId={}", event.getEventId());
@@ -73,12 +99,12 @@ public class QuoteSyncService {
             log.error("Failed to process webhook event: eventId={}", event.getEventId(), e);
             handleProcessingFailure(event, e);
             sample.stop(Timer.builder(SYNC_TIMER)
-                    .tag("event_type", event.getEventType().name())
+                    .tag("event_type", event.getEventType())
                     .tag("status", "failure")
                     .register(meterRegistry));
 
             Counter.builder(FAILURE_COUNTER)
-                    .tag("event_type", event.getEventType().name())
+                    .tag("event_type", event.getEventType())
                     .tag("error_type", e.getClass().getSimpleName())
                     .register(meterRegistry).increment();
         }
@@ -112,10 +138,6 @@ public class QuoteSyncService {
                 webhookEventRepository.save(event);
             }
         }
-    }
-
-    private boolean isUpdateEvent(WebhookEvent.EventType eventType) {
-        return eventType == WebhookEvent.EventType.QUOTE_UPDATED;
     }
 
     private void updateEventStatus(WebhookEvent event, WebhookEvent.EventStatus status) {

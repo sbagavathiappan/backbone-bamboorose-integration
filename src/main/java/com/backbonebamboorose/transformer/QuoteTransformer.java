@@ -1,78 +1,62 @@
 package com.backbonebamboorose.transformer;
 
-import com.backbonebamboorose.model.backbone.BackboneQuote;
+import com.backbonebamboorose.model.bkbn.BkbnMaterialsResponse;
+import com.backbonebamboorose.model.bkbn.BkbnWebhookEvent;
 import com.backbonebamboorose.model.bamboorose.BambooRoseQuote;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Component
 public class QuoteTransformer {
 
-    public BambooRoseQuote transform(BackboneQuote backboneQuote) {
-        log.debug("Transforming Backbone quote {} to Bamboo Rose format", backboneQuote.getQuoteNumber());
+    public BambooRoseQuote transform(BkbnWebhookEvent bkbnEvent, BkbnMaterialsResponse materials) {
+        log.debug("Transforming BKBN event to Bamboo Rose format: orderId={}", bkbnEvent.getOrderId());
+
+        List<BambooRoseQuote.LineItem> lineItems = transformMaterialsToLineItems(materials);
 
         return BambooRoseQuote.builder()
-                .externalQuoteId(backboneQuote.getId())
-                .quoteNumber(backboneQuote.getQuoteNumber())
-                .status(mapStatus(backboneQuote.getStatus()))
-                .supplierName(backboneQuote.getSupplierName())
-                .createdAt(backboneQuote.getCreatedAt())
-                .updatedAt(backboneQuote.getUpdatedAt())
-                .validUntil(backboneQuote.getValidUntil())
-                .currency(backboneQuote.getCurrency())
-                .totalAmount(backboneQuote.getTotalAmount())
-                .lineItems(transformLineItems(backboneQuote.getLineItems()))
-                .notes(backboneQuote.getNotes())
-                .termsAndConditions(backboneQuote.getTerms())
+                .externalQuoteId(bkbnEvent.getOrderId())
+                .quoteNumber("BKBN-" + bkbnEvent.getOrderId())
+                .status("VISUALS_READY")
+                .supplierName("BKBN")
+                .createdAt(bkbnEvent.getTimestamp())
+                .updatedAt(bkbnEvent.getTimestamp())
+                .currency("USD")
+                .lineItems(lineItems)
+                .notes(String.format("BKBN %s event for order %s, assignment %s",
+                        bkbnEvent.getEvent(), bkbnEvent.getOrderId(), bkbnEvent.getAssignmentId()))
+                .termsAndConditions(null)
                 .build();
     }
 
-    private String mapStatus(String backboneStatus) {
-        if (backboneStatus == null) {
-            return "DRAFT";
-        }
-        return switch (backboneStatus.toUpperCase()) {
-            case "CREATED", "NEW" -> "DRAFT";
-            case "UPDATED", "REVISED" -> "REVISION";
-            case "APPROVED", "ACCEPTED" -> "APPROVED";
-            case "REJECTED", "DECLINED" -> "REJECTED";
-            case "EXPIRED" -> "EXPIRED";
-            case "PENDING" -> "PENDING_REVIEW";
-            default -> "DRAFT";
-        };
-    }
-
-    private java.util.List<BambooRoseQuote.LineItem> transformLineItems(
-            java.util.List<BackboneQuote.LineItem> lineItems) {
-        if (lineItems == null) {
-            return java.util.Collections.emptyList();
+    private List<BambooRoseQuote.LineItem> transformMaterialsToLineItems(BkbnMaterialsResponse materials) {
+        if (materials == null || materials.getMaterials() == null) {
+            return Collections.emptyList();
         }
 
-        return lineItems.stream()
-                .map(this::transformLineItem)
+        return materials.getMaterials().stream()
+                .map(this::transformMaterial)
                 .collect(Collectors.toList());
     }
 
-    private BambooRoseQuote.LineItem transformLineItem(BackboneQuote.LineItem backboneItem) {
+    private BambooRoseQuote.LineItem transformMaterial(BkbnMaterialsResponse.Material material) {
         BambooRoseQuote.LineItem.Specifications specs = BambooRoseQuote.LineItem.Specifications.builder()
-                .color(backboneItem.getColor())
-                .size(backboneItem.getSize())
-                .material(backboneItem.getMaterial())
-                .category(backboneItem.getCategory())
+                .category(material.getType())
                 .build();
 
         return BambooRoseQuote.LineItem.builder()
-                .externalLineItemId(backboneItem.getId())
-                .productName(backboneItem.getProductName())
-                .sku(backboneItem.getSku())
-                .quantity(backboneItem.getQuantity())
-                .unitPrice(backboneItem.getUnitPrice())
-                .totalPrice(backboneItem.getTotalPrice())
-                .minimumOrderQuantity(backboneItem.getMinimumOrderQuantity())
-                .leadTimeDays(backboneItem.getLeadTimeDays())
+                .externalLineItemId(material.getId())
+                .productName(material.getName())
+                .sku(material.getId())
+                .quantity(1)
+                .unitPrice(BigDecimal.ZERO)
+                .totalPrice(BigDecimal.ZERO)
                 .specifications(specs)
                 .build();
     }

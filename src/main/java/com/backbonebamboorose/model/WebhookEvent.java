@@ -1,6 +1,5 @@
 package com.backbonebamboorose.model;
 
-import com.backbonebamboorose.model.backbone.BackboneQuote;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -35,14 +34,16 @@ public class WebhookEvent {
     private String eventId;
 
     @Column(name = "event_type", nullable = false)
-    @Enumerated(EnumType.STRING)
-    private EventType eventType;
+    private String eventType;
 
     @Column(name = "source", nullable = false)
     private String source;
 
-    @Column(name = "quote_id")
-    private String quoteId;
+    @Column(name = "order_id")
+    private String orderId;
+
+    @Column(name = "assignment_id")
+    private String assignmentId;
 
     @Column(name = "status", nullable = false)
     @Enumerated(EnumType.STRING)
@@ -64,6 +65,9 @@ public class WebhookEvent {
     @Column(name = "next_retry_at")
     private OffsetDateTime nextRetryAt;
 
+    @Column(name = "materials_fetched")
+    private Boolean materialsFetched;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -77,29 +81,15 @@ public class WebhookEvent {
     protected void onCreate() {
         createdAt = OffsetDateTime.now();
         updatedAt = OffsetDateTime.now();
-        if (retryCount == null) {
-            retryCount = 0;
-        }
-        if (maxRetries == null) {
-            maxRetries = 3;
-        }
-        if (status == null) {
-            status = EventStatus.PENDING;
-        }
+        if (retryCount == null) retryCount = 0;
+        if (maxRetries == null) maxRetries = 3;
+        if (status == null) status = EventStatus.PENDING;
+        if (materialsFetched == null) materialsFetched = false;
     }
 
     @PreUpdate
     protected void onUpdate() {
         updatedAt = OffsetDateTime.now();
-    }
-
-    public enum EventType {
-        QUOTE_CREATED,
-        QUOTE_UPDATED,
-        QUOTE_APPROVED,
-        QUOTE_REJECTED,
-        QUOTE_EXPIRED,
-        QUOTE_SYNC_REQUEST
     }
 
     public enum EventStatus {

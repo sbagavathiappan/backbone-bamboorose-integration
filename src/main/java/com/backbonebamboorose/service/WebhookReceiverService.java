@@ -1,15 +1,15 @@
 package com.backbonebamboorose.service;
 
+import com.backbonebamboorose.exception.WebhookAuthException;
 import com.backbonebamboorose.model.WebhookEvent;
+import com.backbonebamboorose.model.bkbn.BkbnWebhookEvent;
 import com.backbonebamboorose.repository.WebhookEventRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -19,71 +19,50 @@ public class WebhookReceiverService {
 
     private final WebhookEventRepository webhookEventRepository;
     private final ObjectMapper objectMapper;
-    private final WebhookSignatureValidator signatureValidator;
+    private final WebhookAuthValidator authValidator;
 
     @Transactional
-    public WebhookEvent receiveWebhook(String eventType, String payload, String signature) {
-        log.info("Receiving webhook event: type={}", eventType);
+    public WebhookEvent receiveWebhook(String authHeader, String eventTypeHeader, String payload) {
+        log.info("Receiving BKBN webhook: eventType={}", eventTypeHeader);
 
-        signatureValidator.validateSignature(payload, signature);
+        authValidator.validateAuth(authHeader);
 
-        WebhookEvent.EventStatus status = WebhookEvent.EventStatus.PENDING;
-        String quoteId = extractQuoteId(payload);
+        BkbnWebhookEvent bkbnEvent = parsePayload(payload);
+
+        String eventId = UUID.randomUUID().toString();
 
         WebhookEvent event = WebhookEvent.builder()
-                .eventId(UUID.randomUUID().toString())
-                .eventType(WebhookEvent.EventType.valueOf(eventType))
-                .source("BACKBONE_PLM")
-                .quoteId(quoteId)
-                .status(status)
+                .eventId(eventId)
+                .eventType(bkbnEvent.getEvent())
+                .source("BKBN")
+                .orderId(bkbnEvent.getOrderId())
+                .assignmentId(bkbnEvent.getAssignmentId())
+                .status(WebhookEvent.EventStatus.PENDING)
                 .payload(payload)
                 .retryCount(0)
                 .maxRetries(3)
+                .materialsFetched(false)
                 .build();
 
         WebhookEvent savedEvent = webhookEventRepository.save(event);
-        log.info("Webhook event persisted: eventId={}, quoteId={}, status={}",
-                savedEvent.getEventId(), savedEvent.getQuoteId(), savedEvent.getStatus());
+        log.info("Webhook event persisted: eventId={}, orderId={}, assignmentId={}, status={}",
+                savedEvent.getEventId(), savedEvent.getOrderId(), savedEvent.getAssignmentId(), savedEvent.getStatus());
 
         return savedEvent;
     }
 
-    public WebhookEvent validateAndParseWebhook(String eventType, String payload, String signature) {
-        signatureValidator.validateSignature(payload, signature);
-
+    private BkbnWebhookEvent parsePayload(String payload) {
         try {
-            Map<String, Object> payloadMap = objectMapper.readValue(payload, Map.class);
-            log.debug("Parsed webhook payload: keys={}", payloadMap.keySet());
-            return null;
-        } catch (JsonProcessingException e) {
-            log.error("Failed to parse webhook payload", e);
-            throw new IllegalArgumentException("Invalid webhook payload format", e);
+            BkbnWebhookEvent event = objectMapper.readValue(payload, BkbnWebhookEvent.class);
+            if (event.getEvent() == null || event.getOrderId() == null || event.getAssignmentId() == null) {
+                throw new WebhookAuthException("Invalid BKBN webhook payload: missing required fields (event, orderId, assignmentId)");
+            }
+            return event;
+        } catch (WebhookAuthException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to parse BKBN webhook payload", e);
+            throw new WebhookAuthException("Invalid webhook payload format");
         }
-    }
-
-    private String extractQuoteId(String payload) {
-        try {
-            Map<String, Object> payloadMap = objectMapper.readValue(payload, Map.class);
-            if (payloadMap.containsKey("data")) {
-                Object data = payloadMap.get("data");
-                if (data instanceof Map<?, ?> dataMap) {
-                    if (dataMap.containsKey("id")) {
-                        return String.valueOf(dataMap.get("id"));
-                    }
-                    if (dataMap.containsKey("quote_id")) {
-                        return String.valueOf(dataMap.get("quote_id"));
-                    }
-                }
-            }
-            if (payloadMap.containsKey("quote_id")) {
-                return String.valueOf(payloadMap.get("quote_id"));
-            }
-            if (payloadMap.containsKey("id")) {
-                return String.valueOf(payloadMap.get("id"));
-            }
-        } catch (JsonProcessingException e) {
-            log.warn("Could not extract quote_id from payload", e);
-        }
-        return null;
     }
 }

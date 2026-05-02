@@ -2,6 +2,7 @@ package com.backbonebamboorose.controller;
 
 import com.backbonebamboorose.model.WebhookEvent;
 import com.backbonebamboorose.repository.WebhookEventRepository;
+import com.backbonebamboorose.service.BkbnClientService;
 import com.backbonebamboorose.service.BambooRoseClientService;
 import com.backbonebamboorose.service.DeadLetterQueueService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +35,7 @@ import java.util.Map;
 public class InternalManagementController {
 
     private final WebhookEventRepository webhookEventRepository;
+    private final BkbnClientService bkbnClientService;
     private final BambooRoseClientService bambooRoseClientService;
     private final DeadLetterQueueService deadLetterQueueService;
 
@@ -56,7 +58,7 @@ public class InternalManagementController {
     }
 
     @GetMapping("/events/status/{status}")
-    @Operation(summary = "Get events by status", description = "Returns all webhook events matching the given status")
+    @Operation(summary = "Get events by status")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of events"),
             @ApiResponse(responseCode = "400", description = "Invalid status value")
@@ -70,30 +72,33 @@ public class InternalManagementController {
     }
 
     @GetMapping("/events/{eventId}")
-    @Operation(summary = "Get event by ID", description = "Returns a single webhook event by its event ID")
+    @Operation(summary = "Get event by ID")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Event found"),
             @ApiResponse(responseCode = "404", description = "Event not found")
     })
-    public ResponseEntity<WebhookEvent> getEventByEventId(
-            @Parameter(description = "Unique event ID")
-            @PathVariable String eventId) {
+    public ResponseEntity<WebhookEvent> getEventByEventId(@PathVariable String eventId) {
         return webhookEventRepository.findByEventId(eventId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/events/quote/{quoteId}")
-    @Operation(summary = "Get events by quote ID", description = "Returns all webhook events associated with a specific quote")
-    public ResponseEntity<List<WebhookEvent>> getEventsByQuoteId(
-            @Parameter(description = "Backbone PLM quote ID")
-            @PathVariable String quoteId) {
-        List<WebhookEvent> events = webhookEventRepository.findByQuoteId(quoteId);
+    @GetMapping("/events/order/{orderId}")
+    @Operation(summary = "Get events by order ID")
+    public ResponseEntity<List<WebhookEvent>> getEventsByOrderId(@PathVariable String orderId) {
+        List<WebhookEvent> events = webhookEventRepository.findByOrderId(orderId);
+        return ResponseEntity.ok(events);
+    }
+
+    @GetMapping("/events/type/{eventType}")
+    @Operation(summary = "Get events by event type")
+    public ResponseEntity<List<WebhookEvent>> getEventsByEventType(@PathVariable String eventType) {
+        List<WebhookEvent> events = webhookEventRepository.findByEventType(eventType);
         return ResponseEntity.ok(events);
     }
 
     @GetMapping("/stats")
-    @Operation(summary = "Get event statistics", description = "Returns counts of events by status")
+    @Operation(summary = "Get event statistics")
     public ResponseEntity<Map<String, Long>> getStats() {
         Map<String, Long> stats = new HashMap<>();
         stats.put("pending", webhookEventRepository.countByStatus(WebhookEvent.EventStatus.PENDING));
@@ -105,39 +110,37 @@ public class InternalManagementController {
     }
 
     @PostMapping("/health/external")
-    @Operation(summary = "Check external API health", description = "Verifies connectivity to Bamboo Rose API")
+    @Operation(summary = "Check external API health")
     public ResponseEntity<Map<String, Object>> checkExternalHealth() {
         Map<String, Object> health = new HashMap<>();
-        boolean bambooRoseHealthy = bambooRoseClientService.healthCheck();
-        health.put("bambooRose", bambooRoseHealthy ? "UP" : "DOWN");
+        health.put("bkbn", bkbnClientService.healthCheck() ? "UP" : "DOWN");
+        health.put("bambooRose", bambooRoseClientService.healthCheck() ? "UP" : "DOWN");
         health.put("timestamp", java.time.OffsetDateTime.now().toString());
         return ResponseEntity.ok(health);
     }
 
     @GetMapping("/events/recent")
-    @Operation(summary = "Get recent events", description = "Returns the 10 most recently created webhook events")
+    @Operation(summary = "Get recent events")
     public ResponseEntity<List<WebhookEvent>> getRecentEvents() {
         List<WebhookEvent> recentEvents = webhookEventRepository.findTop10ByOrderByCreatedAtDesc();
         return ResponseEntity.ok(recentEvents);
     }
 
     @GetMapping("/dlt")
-    @Operation(summary = "List dead letter queue events", description = "Returns all permanently failed events in the dead letter queue")
+    @Operation(summary = "List dead letter queue events")
     public ResponseEntity<List<WebhookEvent>> getDeadLetterQueueEvents() {
         List<WebhookEvent> dltEvents = deadLetterQueueService.getDeadLetterEvents();
         return ResponseEntity.ok(dltEvents);
     }
 
     @PostMapping("/dlt/{eventId}/retry")
-    @Operation(summary = "Retry a dead letter event", description = "Moves a failed event back to PENDING status for reprocessing")
+    @Operation(summary = "Retry a dead letter event")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Event queued for retry"),
-            @ApiResponse(responseCode = "404", description = "Event not found in dead letter queue"),
+            @ApiResponse(responseCode = "404", description = "Event not found"),
             @ApiResponse(responseCode = "400", description = "Event is not in a retriable state")
     })
-    public ResponseEntity<Map<String, Object>> retryDeadLetterEvent(
-            @Parameter(description = "Event ID to retry")
-            @PathVariable String eventId) {
+    public ResponseEntity<Map<String, Object>> retryDeadLetterEvent(@PathVariable String eventId) {
         try {
             deadLetterQueueService.retryEvent(eventId);
             return ResponseEntity.ok(Map.of(
@@ -155,7 +158,7 @@ public class InternalManagementController {
     }
 
     @PostMapping("/dlt/retry-all")
-    @Operation(summary = "Retry all dead letter events", description = "Moves all failed events back to PENDING status for reprocessing")
+    @Operation(summary = "Retry all dead letter events")
     public ResponseEntity<Map<String, Object>> retryAllDeadLetterEvents() {
         int count = deadLetterQueueService.retryAllEvents();
         return ResponseEntity.ok(Map.of(
@@ -166,14 +169,12 @@ public class InternalManagementController {
     }
 
     @DeleteMapping("/dlt/{eventId}")
-    @Operation(summary = "Discard a dead letter event", description = "Permanently removes an event from the dead letter queue")
+    @Operation(summary = "Discard a dead letter event")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Event discarded"),
             @ApiResponse(responseCode = "404", description = "Event not found")
     })
-    public ResponseEntity<Map<String, Object>> discardDeadLetterEvent(
-            @Parameter(description = "Event ID to discard")
-            @PathVariable String eventId) {
+    public ResponseEntity<Map<String, Object>> discardDeadLetterEvent(@PathVariable String eventId) {
         try {
             deadLetterQueueService.discardEvent(eventId);
             return ResponseEntity.ok(Map.of(

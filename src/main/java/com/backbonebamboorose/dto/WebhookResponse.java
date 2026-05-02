@@ -21,14 +21,14 @@ public class WebhookResponse {
     @JsonProperty("event_id")
     private String eventId;
 
-    @JsonProperty("quote_id")
-    private String quoteId;
+    @JsonProperty("order_id")
+    private String orderId;
 
-    public static WebhookResponse success(String eventId, String quoteId, String message) {
+    public static WebhookResponse success(String eventId, String orderId, String message) {
         return WebhookResponse.builder()
                 .success(true)
                 .eventId(eventId)
-                .quoteId(quoteId)
+                .orderId(orderId)
                 .message(message)
                 .build();
     }

@@ -11,11 +11,11 @@ spring:
 
 webhook:
   security:
-    secret: test-secret-key-for-unit-tests
-    header-name: X-Webhook-Signature
-  backbone:
-    base-url: https://api.backboneplm.com
-    api-key: test-api-key
+    webhook-secret: test-secret-token
+  bkbn:
+    base-url: https://sync.bkbn.com
+    client-id: test-client-id
+    client-secret: test-client-secret
   bamboorose:
     base-url: https://api.bamboorose.com
     api-key: test-api-key
@@ -30,5 +30,5 @@ async:
 
 logging:
   level:
-    com.backbonetobbr: DEBUG
+    com.backbonebamboorose: DEBUG
     org.springframework: WARN

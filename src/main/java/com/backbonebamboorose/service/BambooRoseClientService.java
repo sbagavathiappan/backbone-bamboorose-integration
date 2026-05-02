@@ -161,7 +161,7 @@ public class BambooRoseClientService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + webhookProperties.getBamboorose().getApiKey());
         headers.set("X-API-Key", webhookProperties.getBamboorose().getApiKey());
-        headers.set("X-Source", "BackboneToBbr-WebhookService");
+        headers.set("X-Source", "BKBN-BambooRose-Integration");
         return headers;
     }
 

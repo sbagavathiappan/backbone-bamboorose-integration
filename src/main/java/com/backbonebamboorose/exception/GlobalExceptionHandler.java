@@ -17,10 +17,10 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(WebhookSignatureException.class)
-    public ResponseEntity<Map<String, Object>> handleSignatureException(WebhookSignatureException ex) {
-        log.warn("Webhook signature validation failed: {}", ex.getMessage());
-        return buildResponse(HttpStatus.UNAUTHORIZED, "Invalid webhook signature", ex.getMessage());
+    @ExceptionHandler(WebhookAuthException.class)
+    public ResponseEntity<Map<String, Object>> handleAuthException(WebhookAuthException ex) {
+        log.warn("Webhook authentication failed: {}", ex.getMessage());
+        return buildResponse(HttpStatus.UNAUTHORIZED, "Authentication failed", ex.getMessage());
     }
 
     @ExceptionHandler(WebhookProcessingException.class)

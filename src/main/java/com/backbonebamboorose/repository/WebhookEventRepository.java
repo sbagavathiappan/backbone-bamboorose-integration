@@ -23,7 +23,9 @@ public interface WebhookEventRepository extends JpaRepository<WebhookEvent, Long
 
     Page<WebhookEvent> findByStatus(WebhookEvent.EventStatus status, Pageable pageable);
 
-    List<WebhookEvent> findByQuoteId(String quoteId);
+    List<WebhookEvent> findByOrderId(String orderId);
+
+    List<WebhookEvent> findByEventType(String eventType);
 
     @Query("SELECT we FROM WebhookEvent we WHERE we.status = 'RETRYING' AND we.nextRetryAt <= :now")
     List<WebhookEvent> findRetriableEvents(@Param("now") OffsetDateTime now);
