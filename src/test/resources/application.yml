@@ -1,0 +1,34 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+webhook:
+  security:
+    secret: test-secret-key-for-unit-tests
+    header-name: X-Webhook-Signature
+  backbone:
+    base-url: https://api.backboneplm.com
+    api-key: test-api-key
+  bamboorose:
+    base-url: https://api.bamboorose.com
+    api-key: test-api-key
+    api-secret: test-api-secret
+
+async:
+  executor:
+    core-pool-size: 2
+    max-pool-size: 5
+    queue-capacity: 50
+    thread-name-prefix: test-webhook-sync-
+
+logging:
+  level:
+    com.backbonetobbr: DEBUG
+    org.springframework: WARN

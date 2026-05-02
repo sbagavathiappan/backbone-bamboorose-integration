@@ -1,0 +1,35 @@
+### Gradle ###
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+
+### Eclipse ###
+.classpath
+.project
+.settings/
+
+### VS Code ###
+.vscode/
+
+### macOS ###
+.DS_Store
+
+### Logs ###
+*.log
+
+### OS ###
+Thumbs.db
+
+### IDE ###
+*.swp
+*.swo
+*~

@@ -1,0 +1,110 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: backbone-to-bbr-webhook-service
+
+  # Database Configuration (H2 for dev, PostgreSQL for prod)
+  datasource:
+    url: jdbc:h2:mem:webhookdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# Webhook Security
+webhook:
+  security:
+    secret: ${WEBHOOK_SECRET:change-this-in-production}
+    header-name: X-Webhook-Signature
+  backbone:
+    base-url: ${BACKBONE_PLM_URL:https://api.backboneplm.com}
+    api-key: ${BACKBONE_API_KEY:your-api-key}
+  bamboorose:
+    base-url: ${BAMBOO_ROSE_URL:https://api.bamboorose.com}
+    api-key: ${BAMBOO_ROSE_API_KEY:your-api-key}
+    api-secret: ${BAMBOO_ROSE_API_SECRET:your-api-secret}
+
+# Async Configuration
+async:
+  executor:
+    core-pool-size: 5
+    max-pool-size: 20
+    queue-capacity: 500
+    thread-name-prefix: webhook-sync-
+
+# Resilience4j Retry Configuration
+resilience4j:
+  retry:
+    instances:
+      bamboorose:
+        max-attempts: 3
+        wait-duration: 1s
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+        ignore-exceptions:
+          - com.backbonetobbr.exception.UnrecoverableException
+  circuitbreaker:
+    instances:
+      bamboorose:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+  timelimiter:
+    instances:
+      bamboorose:
+        timeout-duration: 10s
+        cancel-running-future: true
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.backbonetobbr: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
